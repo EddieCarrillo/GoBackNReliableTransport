@@ -215,7 +215,7 @@ int computeChecksum(int packetType, struct pkt packet)
 }
 
 int waitingForAck(){
-   return nextSeqNum < base + SND_BUF_LEN;
+   return nextSeqNum >= base + SND_BUF_LEN;
 }
 
 /*Converts 32 bit integer into C str*/
