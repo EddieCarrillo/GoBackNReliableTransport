@@ -1,6 +1,6 @@
 # GoBackNReliableTransport
 
-In general we will use a seq_num modoulo 2**32
+qill use a seq_num modoulo 2**32
 
 #Sender Side Logic:
 
