@@ -83,21 +83,21 @@ void B_output(struct msg message)  /* need be completed only for extra credit */
 void A_input(struct pkt packet)
 {
    //Corupt ACK, wrong ACK, is a NACK (use negative values for NACK)
-  if (isCorrupt(SENDER, packet) || packet.acknum != seq_num){
-      printf("The data was corrupted or ACK number is incorrect, thus retrasmitting the data.\n");
-      //Resend the packet if it was not received properly or the ACK was corrupted.
-      tolayer3(SENDER, sendPacket);
+  if (isCorrupt(SENDER, packet)){
+      printf("The data was corrupted do nothing\n");
       return;
   }
   //At this point we have that we have received an ACK so...
   printf("Received an good ACK from the reciever, can now get new data to send\n");
-  //Stop the timer
-  stoptimer(SENDER);
-  //Update the seq number.
-  seq_num = (seq_num + 1) % 2; 
-  //We can also receive data from the upper layer
-  waitingForAck = (waitingForAck + 1) % 2;
-  
+  //Update the base
+  int shiftLift = packet.acknum - base + 1; //Cumulative Acks.
+  shiftLeftByN(sndBuf, SND_BUF_LEN, shiftLift); //make acknum + 1 the new base
+  base = packet.acknum + 1;
+  if (base == nextSeqNum) //We are no longer waiting for any ACKs
+      stoptimer(SENDER); 
+  else 
+      starttimer(SENDER);
+     
 }
 
 /* called when A's timer goes off */
@@ -105,9 +105,12 @@ void A_timerinterrupt()
 {
    printf("TIMER!!! \n");
    //At this point we should resend the data and reset the timer.
-   printf("Resending the packet.\n");
-   tolayer3(SENDER, sendPacket);
-   printf("Resent.\n");
+   printf("Resending packets.\n");
+   int i;
+   for (i = 0; i < SND_BUF_LEN; i++){
+      tolayer3(SENDER,sndBuf[i]);
+   }
+   printf("Resent packets from sndbuf.\n");
    //Reset the timer.
    printf("Restarting the timer\n");
    starttimer(SENDER, TIMER_LEN);
@@ -256,6 +259,14 @@ int isCorrupt(int packetType, struct pkt packet)
     free(sum);
 
     return ((expectedChecksum + calculatedChecksum) != (0xFFFFFFFF));
+}
+
+/*This should be replaced with some kind of ciruclar buffer.*/
+void shiftLeftByN(int arr [] , int arrlen, int n){
+    int i;
+    for (i = n; i < arrlen; i++){
+        arr[i-n] = arr[i]; //Shift left by n.
+    }
 }
 
 
