@@ -19,6 +19,7 @@
 #define RECEIVER 1
 #define MSG_LEN 20 //Symbolic constant for max size of message.
 #define TIMER_LEN 20.0f //Being very conservative
+#define SND_BUF_LEN 50
 
 /* a "msg" is the data unit passed from layer 5 (teachers code) to layer  */
 /* 4 (students' code).  It contains the data (characters) to be delivered */
@@ -41,13 +42,14 @@ struct pkt {
 
 
 /*Sender states*/
-int seq_num = 0;
-int waitingForAck = 0;
+int base = 1;
+int nextSeqNum = 1;
+struct pkt sndBuf[SND_BUF_LEN];
 
 /*Receiver states*/
 int expectedSeqNumber = 0;
 /*The next expected seq number from the sender. Used by the receiver*/
-int receiver_seq_num = 0;
+int nextSeqNum = 0;
 
 /*Need to buffer the last sent message just in case it was dropped.*/
 struct pkt sendPacket;
@@ -55,7 +57,8 @@ struct pkt sendPacket;
 /* Transport layer sender recieived data from upper layer to send to network layer */
 void A_output(struct msg message)
 {
-    if (waitingForAck){
+   //Refuse Data
+    if (waitingForAck()){
         printf("The sender is currently busy waiting for a packet, dropping the data from the application layer.");
         return;
     }
@@ -63,9 +66,12 @@ void A_output(struct msg message)
     //WaitingForAck == 0 Not waiting for an ACK, thus go ahead and process + send the data.
     createAndSendSenderPacket(message);
     printf("Created packet and sent it to the network layer.");
-    //We are now waiting for an ACK, so block any data coming from upper layer.
-    waitingForAck = (waitingForAck + 1) % 2;
-    //Don't update the seq number until we receive an ACK.
+    //Added packet to sndbuf window
+    //Start the timer 
+    printf("Starting the packet loss timer.\n");
+    if (base == nextSeqNum) // This means we have a new window.
+        starttimer(SENDER, TIMER_LEN);
+    ++nextSeqNum; //The sequence of the packet we would send next if there is enough room in the window.
 }
 
 void B_output(struct msg message)  /* need be completed only for extra credit */
@@ -183,18 +189,15 @@ struct pkt createSenderPacket(struct msg message){
 
 void createAndSendSenderPacket(struct msg message){
     printf("Created the packet.\n");
-    sendPacket = createSenderPacket(message);
+    //Here the seqnum can go up to 2**31 - 1
+    sndBuf[nextSeqNum-base] = createSenderPacket(message);
     //Packet is created, now we can send it into the network layer.
     printf("Sending the packet\n");
     tolayer3(SENDER, sendPacket);
-    //Start the timer 
-    printf("Starting the packet loss timer.\n");
-    starttimer(SENDER, TIMER_LEN);
 }
 
 int computeChecksum(int packetType, struct pkt packet)
 {
-    
     int sum = 0;
     int i;
     if (packetType == SENDER){
@@ -205,6 +208,10 @@ int computeChecksum(int packetType, struct pkt packet)
     if (packetType == RECEIVER)
         sum += packet.acknum;
     return ~sum;
+}
+
+int waitingForAck(){
+   return nextSeqNum < base + windowSize;
 }
 
 /*Converts 32 bit integer into C str*/
