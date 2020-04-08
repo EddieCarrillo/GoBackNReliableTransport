@@ -145,7 +145,7 @@ void B_init()
 /* Transport layer receiver gets data from network layer.*/
 void B_input(struct pkt packet)
 {
-   if (isCorrupt(SENDER, packet)){
+   if (isCorrupt(RECEIVER, packet)){
       printf("Received a corrupt packet on the receiver side.\n");
       if (lastAckedPacket.seqnum > 0){
          tolayer3(RECEIVER, lastAckedPacket);
