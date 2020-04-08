@@ -47,13 +47,8 @@ int nextSeqNum = 1;
 struct pkt sndBuf[SND_BUF_LEN];
 
 /*Receiver states*/
-int expectedSeqNumber = 0;
-/*The next expected seq number from the sender. Used by the receiver*/
-int nextSeqNum = 0;
-
-/*Need to buffer the last sent message just in case it was dropped.*/
-struct pkt sendPacket;
-
+int expectedSeqNumber = 1;
+struct pkt lastAckedPacket;
 /* Transport layer sender recieived data from upper layer to send to network layer */
 void A_output(struct msg message)
 {
@@ -142,6 +137,7 @@ void B_timerinterrupt()
 
 void B_init()
 {
+   lastAckedPacket.seqnum = -1; //Initially there is not packet to resent (EDGE CASE)
 }
 
 /* Note that with simplex transfer from a-to-B, there is no B_output() */
@@ -149,38 +145,43 @@ void B_init()
 /* Transport layer receiver gets data from network layer.*/
 void B_input(struct pkt packet)
 {
-   if (isCorrupt(RECEIVER, packet)){
-      printf("Received a corrupt packet. Sending a NACK.\n.");
-      createReceiverPacketAndSend(-1);
+   if (isCorrupt(SENDER, packet)){
+      printf("Received a corrupt packet on the receiver side.\n");
+      if (lastAckedPacket.seqnum > 0){
+         tolayer3(RECEIVER, lastAckedPacket);
+      }
       return;
    }
-   if (packet.seqnum != seq_num){
-      printf("Received a packet with the wrong seq num\n");
-      //Send the previous seq number 
-      createReceiverPacketAndSend((receiver_seq_num + 1) % 2);
+   if (packet.seqnum != expectedSeqNumber){
+      printf("Received out of order packet.\n");
+      if (lastAckedPacket.seqnum > 0){
+         tolayer3(RECEIVER, lastAckedPacket);
+      }
       return;
    }
-   printf("Received a good packet from the sender\n");
-   //Otherwise the packet is not corrupted and has the correct seq_number, thus 
-   //we should send the data up to the upper layer.
+
+   //Not corrupt and in order.
+   //Extract data
    struct msg message;
    int i;
-
-   while (i < MSG_LEN && packet.payload[i] != '\0')
-        message.data[i] = packet.payload[i];
-   printf("Finished extracting data from the packet and sending it back up to the upper layer\n");
-   tolayer5(RECEIVER,message);
-   //Send an ACK to the sender.
-   printf("Sent data up to receiving proc, now creating and sending ACK back to sender.\n");
-   createReceiverPacketAndSend(receiver_seq_num);
-   receiver_seq_num = (receiver_seq_num + 1) % 2;
+   for (i = 0; i < MSG_LEN; i++)
+       (message.data)[i] = (packet.payload)[i];
+       //Send it to higher layer
+   tolayer5(RECEIVER, message);
+   printf("Extracted data and sent it up.\n");
+   //Send an ACK
+   lastAckedPacket = createReceiverPacket(expectedSeqNumber);
+   tolayer5(RECEIVER, lastAckedPacket);
+   printf("Created ACK and sent it to the sender.\n");
+   //Update the expected seq number
+   expectedSeqNumber++; 
 }
 
 
 struct pkt createSenderPacket(struct msg message){
    struct pkt sndpkt;
     //Set the sequence number
-   sndpkt.seqnum = seq_num;
+   sndpkt.seqnum = nextSeqNum;
     //Copy the message data into the payload field for the packet
    int i;
    for (i = 0; i < MSG_LEN && message.data[i] != '\0'; i++)
@@ -196,7 +197,7 @@ void createAndSendSenderPacket(struct msg message){
     sndBuf[nextSeqNum-base] = createSenderPacket(message);
     //Packet is created, now we can send it into the network layer.
     printf("Sending the packet\n");
-    tolayer3(SENDER, sendPacket);
+    tolayer3(SENDER, sndBuf[nextSeqNum - base]);
 }
 
 int computeChecksum(int packetType, struct pkt packet)
@@ -214,7 +215,7 @@ int computeChecksum(int packetType, struct pkt packet)
 }
 
 int waitingForAck(){
-   return nextSeqNum < base + windowSize;
+   return nextSeqNum < base + SND_BUF_LEN;
 }
 
 /*Converts 32 bit integer into C str*/
